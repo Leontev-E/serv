@@ -30,6 +30,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Создать статью
+//  статью
 router.post('/', async (req, res) => {
     try {
         let { id, title, content, categoryId, author, createdAt, image } = req.body;
@@ -42,23 +43,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Не все обязательные поля заполнены' });
         }
 
-        // Отвечаем сразу, не дожидаясь записи
-        res.status(202).json({ message: 'Статья отправлена на сохранение', id });
-
-        // Фон: вставка в базу
+        // Сначала записываем в базу
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
         );
 
+        // Только после успешной записи отправляем ответ
+        res.status(201).json({ message: 'Статья успешно создана', id });
+
         console.log(`Статья ${id} успешно записана в базу`);
 
     } catch (err) {
         console.error('Ошибка при создании статьи:', err);
-        // Ничего не отправляем обратно, так как клиент уже получил ответ
+        res.status(500).json({ message: 'Ошибка сервера при создании статьи' });
     }
 });
-
 
 // Обновить статью
 router.put('/:id', async (req, res) => {
