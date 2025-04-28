@@ -16,10 +16,10 @@ app.use(cors({
     credentials: true,
 }));
 
+// Проверка сервера
 app.get('/healthz', (req, res) => {
     res.status(200).send('OK');
 });
-
 
 app.use(express.json());
 
@@ -32,6 +32,7 @@ app.use('/api/comments', commentsRoutes);
 // Порт сервера
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+// ✅ Важно! Нужно явно указать '0.0.0.0' для Render!
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
 });
