@@ -12,7 +12,7 @@ const app = express();
 
 // Настройка CORS
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://klm-wiki.ru'],
+    origin: ['https://klm-wiki.ru'],
     credentials: true,
 }));
 
@@ -30,7 +30,7 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/comments', commentsRoutes);
 
 // Порт сервера
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
 // ✅ Важно! Нужно явно указать '0.0.0.0' для Render!
 app.listen(PORT, '0.0.0.0', () => {
