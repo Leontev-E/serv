@@ -1,6 +1,5 @@
-// routes/articles.js
 import express from 'express';
-import { pool } from '../db.js';
+import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
@@ -8,56 +7,63 @@ const router = express.Router();
 // Получить все статьи
 router.get('/', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT * FROM articles ORDER BY createdat DESC');
+        const [rows] = await pool.query('SELECT * FROM articles');
         res.json(rows);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Ошибка сервера');
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
 
-// Получить одну статью
+// Получить статью по ID
 router.get('/:id', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT * FROM articles WHERE id = $1', [req.params.id]);
+        const [rows] = await pool.query('SELECT * FROM articles WHERE id = ?', [req.params.id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Статья не найдена' });
+        }
         res.json(rows[0]);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Ошибка сервера');
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
 
 // Создать или обновить статью
 router.post('/', async (req, res) => {
     try {
-        const { id, title, content, categoryId, image, author, createdAt } = req.body;
-        const existing = await pool.query('SELECT id FROM articles WHERE id = $1', [id]);
-        if (existing.rows.length > 0) {
+        const { id, title, content, categoryId, author, createdAt, image } = req.body;
+
+        const [rows] = await pool.query('SELECT id FROM articles WHERE id = ?', [id]);
+        if (rows.length > 0) {
+            // Статья существует — обновляем
             await pool.query(
-                'UPDATE articles SET title=$1, content=$2, categoryid=$3, image=$4, author=$5, createdat=$6 WHERE id=$7',
-                [title, content, categoryId, image, author, createdAt, id]
+                'UPDATE articles SET title = ?, content = ?, categoryId = ?, author = ?, createdAt = ?, image = ? WHERE id = ?',
+                [title, content, categoryId, author, createdAt, image, id]
             );
-        } else {
-            await pool.query(
-                'INSERT INTO articles (id, title, content, categoryid, image, author, createdat) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-                [id, title, content, categoryId, image, author, createdAt]
-            );
+            return res.json({ message: 'Статья обновлена' });
         }
-        res.send('OK');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Ошибка сервера');
+
+        // Статья не существует — создаём новую
+        await pool.query(
+            'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, title, content, categoryId, author, createdAt, image]
+        );
+        res.status(201).json({ message: 'Статья создана' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
 
 // Удалить статью
 router.delete('/:id', async (req, res) => {
     try {
-        await pool.query('DELETE FROM articles WHERE id = $1', [req.params.id]);
-        res.send('OK');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Ошибка сервера');
+        await pool.query('DELETE FROM articles WHERE id = ?', [req.params.id]);
+        res.json({ message: 'Статья удалена' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Ошибка сервера' });
     }
 });
 
