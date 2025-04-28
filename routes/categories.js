@@ -1,41 +1,45 @@
+// routes/users.js
 import express from 'express';
-import pool from '../db.js';
+import { pool } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
-// Получить все категории
+// Получить всех пользователей
 router.get('/', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM categories');
+        const { rows } = await pool.query('SELECT id, name, email, role FROM users');
         res.json(rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Ошибка сервера');
     }
 });
 
-// Добавить категорию
+// Создать пользователя
 router.post('/', async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name, email, password, role } = req.body;
         const id = uuidv4();
-        await pool.query('INSERT INTO categories (id, name) VALUES (?, ?)', [id, name]);
-        res.status(201).json({ id, name });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        await pool.query(
+            'INSERT INTO users (id, name, email, password, role) VALUES ($1, $2, $3, $4, $5)',
+            [id, name, email, password, role]
+        );
+        res.send('OK');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Ошибка сервера');
     }
 });
 
-// Удалить категорию
+// Удалить пользователя
 router.delete('/:id', async (req, res) => {
     try {
-        await pool.query('DELETE FROM categories WHERE id = ?', [req.params.id]);
-        res.json({ message: 'Категория удалена' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+        res.send('OK');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Ошибка сервера');
     }
 });
 
