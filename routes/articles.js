@@ -7,7 +7,7 @@ const router = express.Router();
 // Получить все статьи
 router.get('/', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM articles');
+        const [rows] = await pool.query('SELECT * FROM articles ORDER BY createdAt DESC');
         res.json(rows);
     } catch (err) {
         console.error(err);
@@ -29,22 +29,10 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Создать или обновить статью
+// Создать новую статью
 router.post('/', async (req, res) => {
     try {
         const { id, title, content, categoryId, author, createdAt, image } = req.body;
-
-        const [rows] = await pool.query('SELECT id FROM articles WHERE id = ?', [id]);
-        if (rows.length > 0) {
-            // Статья существует — обновляем
-            await pool.query(
-                'UPDATE articles SET title = ?, content = ?, categoryId = ?, author = ?, createdAt = ?, image = ? WHERE id = ?',
-                [title, content, categoryId, author, createdAt, image, id]
-            );
-            return res.json({ message: 'Статья обновлена' });
-        }
-
-        // Статья не существует — создаём новую
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
@@ -53,6 +41,21 @@ router.post('/', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Ошибка сервера' });
+    }
+});
+
+// ✨ Добавляем Редактирование статьи
+router.put('/:id', async (req, res) => {
+    try {
+        const { title, content, categoryId, image } = req.body;
+        await pool.query(
+            'UPDATE articles SET title = ?, content = ?, categoryId = ?, image = ? WHERE id = ?',
+            [title, content, categoryId, image, req.params.id]
+        );
+        res.json({ message: 'Статья обновлена' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Ошибка обновления статьи' });
     }
 });
 
