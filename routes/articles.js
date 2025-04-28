@@ -42,6 +42,16 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Не все обязательные поля заполнены' });
         }
 
+        // Если нет категории — записать NULL
+        if (!categoryId) {
+            categoryId = null;
+        }
+
+        // Если нет изображения — записать NULL
+        if (!image) {
+            image = null;
+        }
+
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
