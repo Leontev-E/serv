@@ -34,7 +34,6 @@ router.post('/', async (req, res) => {
     try {
         let { id, title, content, categoryId, author, createdAt, image } = req.body;
 
-        // Генерация id на сервере, если клиент его не прислал
         if (!id) {
             id = uuidv4();
         }
@@ -43,17 +42,23 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Не все обязательные поля заполнены' });
         }
 
+        // Отвечаем сразу, не дожидаясь записи
+        res.status(202).json({ message: 'Статья отправлена на сохранение', id });
+
+        // Фон: вставка в базу
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
         );
 
-        res.status(201).json({ message: 'Статья успешно создана', id });
+        console.log(`Статья ${id} успешно записана в базу`);
+
     } catch (err) {
         console.error('Ошибка при создании статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера при создании статьи' });
+        // Ничего не отправляем обратно, так как клиент уже получил ответ
     }
 });
+
 
 // Обновить статью
 router.put('/:id', async (req, res) => {
