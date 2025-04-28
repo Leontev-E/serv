@@ -15,6 +15,36 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Вход пользователя (логин)
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (rows.length === 0) {
+            return res.status(401).json({ message: 'Неверный email или пароль' });
+        }
+
+        const user = rows[0];
+
+        // ПРОСТОЕ сравнение пароля (если без шифрования)
+        if (user.password !== password) {
+            return res.status(401).json({ message: 'Неверный email или пароль' });
+        }
+
+        res.json({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+        });
+    } catch (err) {
+        console.error('Ошибка при входе пользователя:', err);
+        res.status(500).json({ message: 'Ошибка сервера при входе' });
+    }
+});
+
+
 // Добавить пользователя
 router.post('/', async (req, res) => {
     try {
