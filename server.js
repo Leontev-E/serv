@@ -16,6 +16,11 @@ app.use(cors({
     credentials: true,
 }));
 
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
+
 app.use(express.json());
 
 // Роуты API
