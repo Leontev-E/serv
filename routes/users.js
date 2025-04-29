@@ -83,4 +83,20 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+// Сменить пароль пользователя
+router.put('/:id/password', async (req, res) => {
+    try {
+        const { password } = req.body;
+        if (!password) {
+            return res.status(400).json({ message: 'Новый пароль обязателен' });
+        }
+
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [password, req.params.id]);
+        res.json({ message: 'Пароль успешно обновлен' });
+    } catch (err) {
+        console.error('Ошибка при смене пароля:', err);
+        res.status(500).json({ message: 'Ошибка сервера при смене пароля' });
+    }
+});
+
 export default router;
