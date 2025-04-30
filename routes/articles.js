@@ -88,7 +88,7 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
             [searchQuery, searchQuery, parseInt(limit), parseInt(offset)]
         );
 
-        res.set('Cache-Control', 'public, max-age=300'); // Кэш на 5 минут
+        res.set('Cache-Control', 'public, max-age=300');
         res.json(rows);
     } catch (err) {
         console.error('Ошибка при получении статей:', err);
@@ -103,7 +103,7 @@ router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, r
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Статья не найдена' });
         }
-        res.set('Cache-Control', 'public, max-age=300'); // Кэш на 5 минут
+        res.set('Cache-Control', 'public, max-age=300');
         res.json(rows[0]);
     } catch (err) {
         console.error('Ошибка при получении статьи:', err);
@@ -116,12 +116,8 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
     try {
         let { id, title, content, categoryId, author, createdAt, image } = req.body;
 
-        id = id || uuidv4(); // Генерировать ID, если не предоставлен
-
-        // Если categoryId пустой, записать NULL
+        id = id || uuidv4();
         categoryId = categoryId || null;
-
-        // Если image пустой, записать NULL
         image = image || null;
 
         await pool.query(
