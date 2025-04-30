@@ -23,7 +23,6 @@ const logger = winston.createLogger({
     transports: [
         new winston.transports.File({ filename: 'error.log', level: 'error' }),
         new winston.transports.File({ filename: 'combined.log' }),
-        new winston.transports.Console(), // Добавляем консольный вывод
     ],
 });
 
@@ -33,7 +32,7 @@ app.use(express.json());
 app.use(cors({
     origin: process.env.CLIENT_URL || 'https://klm-wiki.ru',
     credentials: true,
-    maxAge: 86400, // Кэшировать CORS-ответ на 24 часа
+    maxAge: 86400,
 }));
 app.use((req, res, next) => {
     const start = Date.now();
@@ -45,8 +44,8 @@ app.use((req, res, next) => {
 });
 
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 минут
-    max: 100, // Максимум 100 запросов с одного IP
+    windowMs: 30 * 60 * 1000, // 15 минут
+    max: 100000,
     message: 'Слишком много запросов, попробуйте позже',
 });
 

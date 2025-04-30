@@ -5,7 +5,6 @@ import bcryptjs from 'bcryptjs'; // Замена bcrypt на bcryptjs
 
 const router = express.Router();
 
-// Получить всех пользователей
 router.get('/', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM users');
@@ -16,7 +15,6 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Вход пользователя (логин)
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -42,7 +40,6 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// Добавить пользователя
 router.post('/', async (req, res) => {
     try {
         const { name, email, password, role } = req.body;
@@ -58,7 +55,6 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Обновить роль пользователя
 router.put('/:id', async (req, res) => {
     try {
         const { role } = req.body;
@@ -70,7 +66,6 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-// Удалить пользователя
 router.delete('/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM users WHERE id = ?', [req.params.id]);
@@ -81,7 +76,6 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-// Сменить пароль пользователя
 router.put('/:id/password', async (req, res) => {
     try {
         const { password } = req.body;
