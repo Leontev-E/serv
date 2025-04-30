@@ -84,7 +84,11 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
         const searchQuery = q ? `%${q}%` : '%';
 
         const [rows] = await pool.query(
-            'SELECT id, title, content, categoryId, author, createdAt, image FROM articles WHERE title LIKE ? OR content LIKE ? ORDER BY createdAt DESC LIMIT ? OFFSET ?',
+            `SELECT id, title, content, categoryId, author, createdAt, image
+       FROM articles
+       WHERE title LIKE ? OR content LIKE ?
+       ORDER BY createdAt DESC
+       LIMIT ? OFFSET ?`,
             [searchQuery, searchQuery, parseInt(limit), parseInt(offset)]
         );
 
