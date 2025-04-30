@@ -1,13 +1,20 @@
 import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
+import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
 
 // Получить все статьи
 router.get('/', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM articles');
+        const { page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+        const [rows] = await pool.query(
+            'SELECT id, title, author, createdAt FROM articles ORDER BY createdAt DESC LIMIT ? OFFSET ?',
+            [parseInt(limit), parseInt(offset)]
+        );
+        res.set('Cache-Control', 'public, max-age=300'); // Кэш на 5 минут
         res.json(rows);
     } catch (err) {
         console.error('Ошибка при получении статей:', err);
@@ -15,13 +22,13 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Получить статью по ID
 router.get('/:id', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM articles WHERE id = ?', [req.params.id]);
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Статья не найдена' });
         }
+        res.set('Cache-Control', 'public, max-age=300'); // Кэш на 5 минут
         res.json(rows[0]);
     } catch (err) {
         console.error('Ошибка при получении статьи:', err);

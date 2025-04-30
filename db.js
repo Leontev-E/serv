@@ -3,12 +3,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const pool = mysql.createPool({
-    host: 'evgenl9s.beget.tech',
-    user: 'evgenl9s_klm_wik',
-    password: 'ATKPamOM6!r&',
-    database: 'evgenl9s_klm_wik',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: 20,
     queueLimit: 0,
     charset: 'utf8mb4'
 });
