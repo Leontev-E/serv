@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { body, validationResult } from 'express-validator';
+import redisClient from '../redis.js'; // Импорт из redis.js
 
 const router = express.Router();
 
@@ -46,7 +47,6 @@ router.get('/:articleId', async (req, res) => {
 });
 
 // Добавить комментарий
-
 router.post('/', [
     body('articleId').notEmpty().isUUID(),
     body('userId').notEmpty().isUUID(),

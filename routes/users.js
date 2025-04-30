@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
-import bcrypt from 'bcrypt';
+import bcryptjs from 'bcryptjs'; // Замена bcrypt на bcryptjs
 
 const router = express.Router();
 
@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
         }
 
         const user = rows[0];
-        if (!await bcrypt.compare(password, user.password)) {
+        if (!await bcryptjs.compare(password, user.password)) {
             return res.status(401).json({ message: 'Неверный email или пароль' });
         }
 
@@ -42,13 +42,12 @@ router.post('/login', async (req, res) => {
     }
 });
 
-
 // Добавить пользователя
 router.post('/', async (req, res) => {
     try {
         const { name, email, password, role } = req.body;
         const id = uuidv4();
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcryptjs.hash(password, 10);
         await pool.query('INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)', [
             id, name, email, hashedPassword, role
         ]);
@@ -89,7 +88,7 @@ router.put('/:id/password', async (req, res) => {
         if (!password) {
             return res.status(400).json({ message: 'Новый пароль обязателен' });
         }
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcryptjs.hash(password, 10);
         await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, req.params.id]);
         res.json({ message: 'Пароль успешно обновлен' });
     } catch (err) {

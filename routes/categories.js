@@ -1,17 +1,11 @@
 import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
-import { createClient } from 'redis';
+import redisClient from '../redis.js'; // Импорт из redis.js
 
 const router = express.Router();
 
 // Получить все категории
-
-const redisClient = createClient({
-    url: process.env.REDIS_URL,
-});
-await redisClient.connect();
-
 router.get('/', async (req, res) => {
     try {
         const cached = await redisClient.get('categories');
