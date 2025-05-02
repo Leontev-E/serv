@@ -3,20 +3,11 @@ import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { body, validationResult } from 'express-validator';
 import redisClient from '../redis.js';
-import { authenticateToken } from './users.js';
 
 const router = express.Router();
 
-// Middleware для проверки роли админа
-const isAdmin = (req, res, next) => {
-    if (!req.user || (req.user.role !== 'owner' && req.user.role !== 'lead')) {
-        return res.status(403).json({ message: 'Доступ запрещён' });
-    }
-    next();
-};
-
-// Получить сервисы (доступно всем авторизованным)
-router.get('/', authenticateToken, async (req, res) => {
+// Получить сервисы
+router.get('/', async (req, res) => {
     try {
         const { page = 1, limit = 20, search = '' } = req.query;
         const offset = (page - 1) * limit;
@@ -52,8 +43,8 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 });
 
-// Получить категории (доступно всем авторизованным)
-router.get('/service-categories', authenticateToken, async (req, res) => {
+// Получить категории
+router.get('/service-categories', async (req, res) => {
     try {
         const cacheKey = 'service-categories';
         const cached = await redisClient.get(cacheKey);
@@ -70,8 +61,8 @@ router.get('/service-categories', authenticateToken, async (req, res) => {
     }
 });
 
-// Создать сервис (только owner/lead)
-router.post('/', authenticateToken, isAdmin, [
+// Создать сервис
+router.post('/', [
     body('title').notEmpty().isString().trim().withMessage('Название обязательно'),
     body('url').notEmpty().isURL().withMessage('Некорректная ссылка'),
     body('description').optional().isString().trim(),
@@ -97,8 +88,8 @@ router.post('/', authenticateToken, isAdmin, [
     }
 });
 
-// Обновить сервис (только owner/lead)
-router.put('/:id', authenticateToken, isAdmin, [
+// Обновить сервис
+router.put('/:id', [
     body('title').notEmpty().isString().trim().withMessage('Название обязательно'),
     body('url').notEmpty().isURL().withMessage('Некорректная ссылка'),
     body('description').optional().isString().trim(),
@@ -126,8 +117,8 @@ router.put('/:id', authenticateToken, isAdmin, [
     }
 });
 
-// Удалить сервис (только owner/lead)
-router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
+// Удалить сервис
+router.delete('/:id', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT id FROM useful_services WHERE id = ?', [req.params.id]);
         if (rows.length === 0) {
