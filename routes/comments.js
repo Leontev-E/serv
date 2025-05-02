@@ -5,15 +5,34 @@ import { body, validationResult } from 'express-validator';
 import redisClient from '../redis.js';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 
 const router = express.Router();
 
-// Настройка multer для загрузки файлов
+// Проверка и создание папки uploads
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    fs.chmodSync(uploadsDir, 0o755);
+}
+
+// Настройка multer
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => cb(null, `${uuidv4()}${path.extname(file.originalname)}`),
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } }); // Лимит 5 МБ
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Недопустимый тип файла'));
+        }
+    },
+});
 
 // Получить все комментарии
 router.get('/', async (req, res) => {
@@ -28,7 +47,7 @@ router.get('/', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Ошибка при получении комментариев:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
@@ -48,12 +67,12 @@ router.get('/:articleId', async (req, res) => {
         );
         const [total] = await pool.query('SELECT COUNT(*) as count FROM comments WHERE articleId = ?', [req.params.articleId]);
         const response = { comments: rows, total: total[0].count };
-        await redisClient.setEx(cacheKey, 300, JSON.stringify(response));
-        res.set('Cache-Control', 'public, max-age=300');
+        await redisClient.setEx(cacheKey, 60, JSON.stringify(response));
+        res.set('Cache-Control', 'public, max-age=60');
         res.json(response);
     } catch (err) {
         console.error('Ошибка при получении комментариев для статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
@@ -65,14 +84,16 @@ router.post('/', upload.array('files', 5), [
     body('text').notEmpty().isString(),
     body('parentId').optional().isUUID(),
 ], async (req, res) => {
+    console.log('POST /api/comments received:', req.body, 'Files:', req.files);
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+        console.log('Validation errors:', errors.array());
         return res.status(400).json({ errors: errors.array() });
     }
-
     try {
         const { articleId, userId, userName, text, parentId } = req.body;
         const files = req.files ? req.files.map((file) => `/uploads/${file.filename}`) : [];
+        console.log('Saving comment:', { articleId, userId, userName, text, parentId, files });
         const id = uuidv4();
         const createdAt = new Date().toISOString();
         await pool.query(
@@ -80,6 +101,12 @@ router.post('/', upload.array('files', 5), [
             [id, articleId, userId, userName, text, parentId || null, JSON.stringify(files), createdAt]
         );
         await redisClient.del(`comments:${articleId}:*`);
+        if (parentId) {
+            const [parent] = await pool.query('SELECT articleId FROM comments WHERE id = ?', [parentId]);
+            if (parent.length) {
+                await redisClient.del(`comments:${parent[0].articleId}:*`);
+            }
+        }
         res.status(201).json({
             id,
             articleId,
@@ -92,7 +119,7 @@ router.post('/', upload.array('files', 5), [
         });
     } catch (err) {
         console.error('Ошибка при добавлении комментария:', err);
-        res.status(500).json({ message: 'Ошибка сервера при добавлении комментария' });
+        res.status(500).json({ message: 'Ошибка сервера при добавлении комментария', error: err.message });
     }
 });
 
@@ -101,14 +128,17 @@ router.delete('/:id', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT articleId FROM comments WHERE id = ?', [req.params.id]);
         if (rows.length === 0) {
+            console.warn(`Comment not found: ${req.params.id}`);
             return res.status(404).json({ message: 'Комментарий не найден' });
         }
+        const [childComments] = await pool.query('SELECT id FROM comments WHERE parentId = ?', [req.params.id]);
+        console.log(`Deleting comment: ${req.params.id}, child comments: ${childComments.map(c => c.id).join(', ') || 'none'}`);
         await pool.query('DELETE FROM comments WHERE id = ?', [req.params.id]);
         await redisClient.del(`comments:${rows[0].articleId}:*`);
         res.json({ message: 'Комментарий успешно удалён' });
     } catch (err) {
         console.error('Ошибка при удалении комментария:', err);
-        res.status(500).json({ message: 'Ошибка сервера при удалении комментария' });
+        res.status(500).json({ message: 'Ошибка сервера при удалении комментария', error: err.message });
     }
 });
 
