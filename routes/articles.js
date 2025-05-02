@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { body, param, query, validationResult } from 'express-validator';
+import redisClient from '../redis.js';
 
 const router = express.Router();
 
@@ -22,7 +23,11 @@ const validateCreateArticle = [
     body('title').trim().notEmpty().withMessage('Заголовок обязателен'),
     body('content').trim().notEmpty().withMessage('Содержимое обязательно'),
     body('author').trim().notEmpty().withMessage('Автор обязателен'),
-    body('createdAt').isISO8601().toDate().withMessage('Неверный формат даты'),
+    body('createdAt')
+        .optional()
+        .isISO8601()
+        .toDate()
+        .withMessage('Неверный формат даты'),
     body('categoryId')
         .optional()
         .isUUID()
@@ -45,7 +50,11 @@ const validateUpdateArticle = [
     body('title').trim().notEmpty().withMessage('Заголовок обязателен'),
     body('content').trim().notEmpty().withMessage('Содержимое обязательно'),
     body('author').trim().notEmpty().withMessage('Автор обязателен'),
-    body('createdAt').isISO8601().toDate().withMessage('Неверный формат даты'),
+    body('createdAt')
+        .optional()
+        .isISO8601()
+        .toDate()
+        .withMessage('Неверный формат даты'),
     body('categoryId')
         .optional()
         .isUUID()
@@ -81,8 +90,13 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
     try {
         const { page = 1, limit = 10, q = '' } = req.query;
         const offset = (page - 1) * limit;
-        const searchQuery = q ? `%${q}%` : '%';
+        const cacheKey = `articles:${page}:${limit}:${q}`;
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
+        }
 
+        const searchQuery = q ? `%${q}%` : '%';
         const [rows] = await pool.query(
             `SELECT id, title, content, categoryId, author, createdAt, image
        FROM articles
@@ -92,8 +106,16 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
             [searchQuery, searchQuery, parseInt(limit), parseInt(offset)]
         );
 
+        const [total] = await pool.query(
+            `SELECT COUNT(*) as count FROM articles
+       WHERE title LIKE ? OR content LIKE ?`,
+            [searchQuery, searchQuery]
+        );
+
+        const response = { articles: rows, total: total[0].count };
+        await redisClient.setEx(cacheKey, 300, JSON.stringify(response));
         res.set('Cache-Control', 'public, max-age=300');
-        res.json(rows);
+        res.json(response);
     } catch (err) {
         console.error('Ошибка при получении статей:', err);
         res.status(500).json({ message: 'Ошибка сервера при получении статей' });
@@ -103,10 +125,18 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
 // Получить статью по ID
 router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, res) => {
     try {
+        const cacheKey = `article:${req.params.id}`;
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
+        }
+
         const [rows] = await pool.query('SELECT * FROM articles WHERE id = ?', [req.params.id]);
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Статья не найдена' });
         }
+
+        await redisClient.setEx(cacheKey, 300, JSON.stringify(rows[0]));
         res.set('Cache-Control', 'public, max-age=300');
         res.json(rows[0]);
     } catch (err) {
@@ -121,6 +151,7 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
         let { id, title, content, categoryId, author, createdAt, image } = req.body;
 
         id = id || uuidv4();
+        createdAt = createdAt || new Date().toISOString();
         categoryId = categoryId || null;
         image = image || null;
 
@@ -129,10 +160,13 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
             [id, title, content, categoryId, author, createdAt, image]
         );
 
-        res.status(201).json({ message: 'Статья успешно создана', id });
+        // Инвалидировать кэш
+        await redisClient.del('articles:*');
+
+        res.status(201).json({ id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
         console.error('Ошибка при создании статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера при создании статьи' });
+        res.status(500).json({ message: 'Ошибка сервера при создании статьи', error: err.message });
     }
 });
 
@@ -148,13 +182,17 @@ router.put('/:id', validateUpdateArticle, handleValidationErrors, async (req, re
 
         await pool.query(
             'UPDATE articles SET title = ?, content = ?, categoryId = ?, author = ?, createdAt = ?, image = ? WHERE id = ?',
-            [title, content, categoryId || null, author, createdAt, image || null, req.params.id]
+            [title, content, categoryId || null, author, createdAt || new Date().toISOString(), image || null, req.params.id]
         );
 
-        res.json({ message: 'Статья успешно обновлена' });
+        // Инвалидировать кэш
+        await redisClient.del('articles:*');
+        await redisClient.del(`article:${req.params.id}`);
+
+        res.json({ id: req.params.id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
         console.error('Ошибка при обновлении статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера при обновлении статьи' });
+        res.status(500).json({ message: 'Ошибка сервера при обновлении статьи', error: err.message });
     }
 });
 
@@ -167,10 +205,15 @@ router.delete('/:id', validateDeleteArticle, handleValidationErrors, async (req,
         }
 
         await pool.query('DELETE FROM articles WHERE id = ?', [req.params.id]);
+
+        // Инвалидировать кэш
+        await redisClient.del('articles:*');
+        await redisClient.del(`article:${req.params.id}`);
+
         res.json({ message: 'Статья успешно удалена' });
     } catch (err) {
         console.error('Ошибка при удалении статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера при удалении статьи' });
+        res.status(500).json({ message: 'Ошибка сервера при удалении статьи', error: err.message });
     }
 });
 

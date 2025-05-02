@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
         res.json(response);
     } catch (err) {
         console.error('Ошибка при получении сервисов:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
@@ -56,7 +56,7 @@ router.post(
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ message: 'Ошибка валидации', errors: errors.array() });
         }
         try {
             const { name } = req.body;
@@ -65,12 +65,12 @@ router.post(
                 'INSERT INTO service_categories (id, name) VALUES (?, ?)',
                 [id, name]
             );
-            // Инвалидируем кэш категорий
+            // Инвалидировать кэш категорий
             await redisClient.del('service-categories');
             res.status(201).json({ id, name });
         } catch (err) {
             console.error('Ошибка при создании категории:', err);
-            res.status(500).json({ message: 'Ошибка сервера' });
+            res.status(500).json({ message: 'Ошибка сервера при создании категории', error: err.message });
         }
     }
 );
@@ -91,7 +91,7 @@ router.get('/service-categories', async (req, res) => {
         res.json(categories);
     } catch (err) {
         console.error('Ошибка при получении категорий:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
@@ -106,7 +106,16 @@ router.post(
             .withMessage('Название обязательно'),
         body('url')
             .notEmpty()
-            .isURL()
+            .isString()
+            .trim()
+            .custom((value) => {
+                try {
+                    new URL(value);
+                    return true;
+                } catch {
+                    throw new Error('Некорректная ссылка');
+                }
+            })
             .withMessage('Некорректная ссылка'),
         body('description')
             .optional()
@@ -114,13 +123,17 @@ router.post(
             .trim(),
         body('categoryId')
             .optional()
-            .isUUID()
-            .withMessage('Некорректный ID категории'),
+            .custom((value) => {
+                if (value && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+                    throw new Error('Некорректный ID категории');
+                }
+                return true;
+            }),
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ message: 'Ошибка валидации', errors: errors.array() });
         }
         try {
             const { title, url, description, categoryId } = req.body;
@@ -130,18 +143,22 @@ router.post(
                 'INSERT INTO useful_services (id, title, url, description, categoryId, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
                 [id, title, url, description || null, categoryId || null, createdAt]
             );
-            // Инвалидируем кэш сервисов
-            await redisClient.del('services:*');
+            // Инвалидировать кэш сервисов
+            const keys = await redisClient.keys('services:*');
+            if (keys.length > 0) {
+                await redisClient.del(keys);
+            }
             res.status(201).json({ id, title, url, description, categoryId, createdAt });
         } catch (err) {
             console.error('Ошибка при создании сервиса:', err);
-            res.status(500).json({ message: 'Ошибка сервера' });
+            res.status(500).json({ message: 'Ошибка сервера при создании сервиса', error: err.message });
         }
     }
 );
 
 // Обновить сервис
-router.put('/:id',
+router.put(
+    '/:id',
     [
         body('title')
             .notEmpty()
@@ -150,7 +167,16 @@ router.put('/:id',
             .withMessage('Название обязательно'),
         body('url')
             .notEmpty()
-            .isURL()
+            .isString()
+            .trim()
+            .custom((value) => {
+                try {
+                    new URL(value);
+                    return true;
+                } catch {
+                    throw new Error('Некорректная ссылка');
+                }
+            })
             .withMessage('Некорректная ссылка'),
         body('description')
             .optional()
@@ -158,13 +184,17 @@ router.put('/:id',
             .trim(),
         body('categoryId')
             .optional()
-            .isUUID()
-            .withMessage('Некорректный ID категории'),
+            .custom((value) => {
+                if (value && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+                    throw new Error('Некорректный ID категории');
+                }
+                return true;
+            }),
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ message: 'Ошибка валидации', errors: errors.array() });
         }
         try {
             const { title, url, description, categoryId } = req.body;
@@ -179,11 +209,15 @@ router.put('/:id',
                 'UPDATE useful_services SET title = ?, url = ?, description = ?, categoryId = ? WHERE id = ?',
                 [title, url, description || null, categoryId || null, req.params.id]
             );
-            await redisClient.del('services:*');
+            // Инвалидировать кэш сервисов
+            const keys = await redisClient.keys('services:*');
+            if (keys.length > 0) {
+                await redisClient.del(keys);
+            }
             res.json({ id: req.params.id, title, url, description, categoryId });
         } catch (err) {
             console.error('Ошибка при обновлении сервиса:', err);
-            res.status(500).json({ message: 'Ошибка сервера' });
+            res.status(500).json({ message: 'Ошибка сервера при обновлении сервиса', error: err.message });
         }
     }
 );
@@ -196,11 +230,15 @@ router.delete('/:id', async (req, res) => {
             return res.status(404).json({ message: 'Сервис не найден' });
         }
         await pool.query('DELETE FROM useful_services WHERE id = ?', [req.params.id]);
-        await redisClient.del('services:*');
+        // Инвалидировать кэш сервисов
+        const keys = await redisClient.keys('services:*');
+        if (keys.length > 0) {
+            await redisClient.del(keys);
+        }
         res.json({ message: 'Сервис удалён' });
     } catch (err) {
         console.error('Ошибка при удалении сервиса:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        res.status(500).json({ message: 'Ошибка сервера при удалении сервиса', error: err.message });
     }
 });
 
