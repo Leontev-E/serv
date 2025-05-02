@@ -43,6 +43,38 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Создать категорию сервисов
+router.post(
+    '/service-categories',
+    [
+        body('name')
+            .notEmpty()
+            .isString()
+            .trim()
+            .withMessage('Название категории обязательно'),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+        try {
+            const { name } = req.body;
+            const id = uuidv4();
+            await pool.query(
+                'INSERT INTO service_categories (id, name) VALUES (?, ?)',
+                [id, name]
+            );
+            // Инвалидируем кэш категорий
+            await redisClient.del('service-categories');
+            res.status(201).json({ id, name });
+        } catch (err) {
+            console.error('Ошибка при создании категории:', err);
+            res.status(500).json({ message: 'Ошибка сервера' });
+        }
+    }
+);
+
 // Получить категории
 router.get('/service-categories', async (req, res) => {
     try {
@@ -51,7 +83,9 @@ router.get('/service-categories', async (req, res) => {
         if (cached) {
             return res.json(JSON.parse(cached));
         }
-        const [categories] = await pool.query('SELECT id, name FROM service_categories ORDER BY name');
+        const [categories] = await pool.query(
+            'SELECT id, name FROM service_categories ORDER BY name'
+        );
         await redisClient.setEx(cacheKey, 300, JSON.stringify(categories));
         res.set('Cache-Control', 'public, max-age=300');
         res.json(categories);
@@ -62,60 +96,97 @@ router.get('/service-categories', async (req, res) => {
 });
 
 // Создать сервис
-router.post('/', [
-    body('title').notEmpty().isString().trim().withMessage('Название обязательно'),
-    body('url').notEmpty().isURL().withMessage('Некорректная ссылка'),
-    body('description').optional().isString().trim(),
-    body('categoryId').optional().isUUID().withMessage('Некорректный ID категории'),
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+router.post(
+    '/',
+    [
+        body('title')
+            .notEmpty()
+            .isString()
+            .trim()
+            .withMessage('Название обязательно'),
+        body('url')
+            .notEmpty()
+            .isURL()
+            .withMessage('Некорректная ссылка'),
+        body('description')
+            .optional()
+            .isString()
+            .trim(),
+        body('categoryId')
+            .optional()
+            .isUUID()
+            .withMessage('Некорректный ID категории'),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+        try {
+            const { title, url, description, categoryId } = req.body;
+            const id = uuidv4();
+            const createdAt = new Date().toISOString();
+            await pool.query(
+                'INSERT INTO useful_services (id, title, url, description, categoryId, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+                [id, title, url, description || null, categoryId || null, createdAt]
+            );
+            // Инвалидируем кэш сервисов
+            await redisClient.del('services:*');
+            res.status(201).json({ id, title, url, description, categoryId, createdAt });
+        } catch (err) {
+            console.error('Ошибка при создании сервиса:', err);
+            res.status(500).json({ message: 'Ошибка сервера' });
+        }
     }
-    try {
-        const { title, url, description, categoryId } = req.body;
-        const id = uuidv4();
-        const createdAt = new Date().toISOString();
-        await pool.query(
-            'INSERT INTO useful_services (id, title, url, description, categoryId, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
-            [id, title, url, description || null, categoryId || null, createdAt]
-        );
-        await redisClient.del('services:*');
-        res.status(201).json({ id, title, url, description, categoryId, createdAt });
-    } catch (err) {
-        console.error('Ошибка при создании сервиса:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
-    }
-});
+);
 
 // Обновить сервис
-router.put('/:id', [
-    body('title').notEmpty().isString().trim().withMessage('Название обязательно'),
-    body('url').notEmpty().isURL().withMessage('Некорректная ссылка'),
-    body('description').optional().isString().trim(),
-    body('categoryId').optional().isUUID().withMessage('Некорректный ID категории'),
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-    try {
-        const { title, url, description, categoryId } = req.body;
-        const [rows] = await pool.query('SELECT id FROM useful_services WHERE id = ?', [req.params.id]);
-        if (rows.length === 0) {
-            return res.status(404).json({ message: 'Сервис не найден' });
+router.put('/:id',
+    [
+        body('title')
+            .notEmpty()
+            .isString()
+            .trim()
+            .withMessage('Название обязательно'),
+        body('url')
+            .notEmpty()
+            .isURL()
+            .withMessage('Некорректная ссылка'),
+        body('description')
+            .optional()
+            .isString()
+            .trim(),
+        body('categoryId')
+            .optional()
+            .isUUID()
+            .withMessage('Некорректный ID категории'),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
-        await pool.query(
-            'UPDATE useful_services SET title = ?, url = ?, description = ?, categoryId = ? WHERE id = ?',
-            [title, url, description || null, categoryId || null, req.params.id]
-        );
-        await redisClient.del('services:*');
-        res.json({ id: req.params.id, title, url, description, categoryId });
-    } catch (err) {
-        console.error('Ошибка при обновлении сервиса:', err);
-        res.status(500).json({ message: 'Ошибка сервера' });
+        try {
+            const { title, url, description, categoryId } = req.body;
+            const [rows] = await pool.query(
+                'SELECT id FROM useful_services WHERE id = ?',
+                [req.params.id]
+            );
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'Сервис не найден' });
+            }
+            await pool.query(
+                'UPDATE useful_services SET title = ?, url = ?, description = ?, categoryId = ? WHERE id = ?',
+                [title, url, description || null, categoryId || null, req.params.id]
+            );
+            await redisClient.del('services:*');
+            res.json({ id: req.params.id, title, url, description, categoryId });
+        } catch (err) {
+            console.error('Ошибка при обновлении сервиса:', err);
+            res.status(500).json({ message: 'Ошибка сервера' });
+        }
     }
-});
+);
 
 // Удалить сервис
 router.delete('/:id', async (req, res) => {
