@@ -7,6 +7,7 @@ import articlesRoutes from './routes/articles.js';
 import usersRoutes from './routes/users.js';
 import categoriesRoutes from './routes/categories.js';
 import commentsRoutes from './routes/comments.js';
+import servicesRoutes from './routes/services.js';
 import rateLimit from 'express-rate-limit';
 
 dotenv.config();
@@ -44,7 +45,7 @@ app.use((req, res, next) => {
 });
 
 const limiter = rateLimit({
-    windowMs: 30 * 60 * 1000, // 15 минут
+    windowMs: 30 * 60 * 1000, // 30 минут
     max: 100000,
     message: 'Слишком много запросов, попробуйте позже',
 });
@@ -61,6 +62,7 @@ app.use('/api/articles', articlesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/comments', commentsRoutes);
+app.use('/api/services', servicesRoutes);
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
