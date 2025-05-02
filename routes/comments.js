@@ -6,14 +6,19 @@ import redisClient from '../redis.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url'; // Добавлено
 
 const router = express.Router();
+
+// Получение __dirname в ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Проверка и создание папки uploads
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
-    fs.chmodSync(uploadsDir, 0o755);
+    fs.chmodSync(UploadsDir, 0o755);
 }
 
 // Настройка multer
@@ -43,7 +48,7 @@ router.get('/', async (req, res) => {
             'SELECT id, articleId, userId, userName, text, parentId, files, createdAt FROM comments ORDER BY createdAt DESC LIMIT ? OFFSET ?',
             [parseInt(limit), parseInt(offset)]
         );
-        res.set('Cache-Control', 'public, max-age=300');
+        res.set('Cache-Control', 'public, max-age=60');
         res.json(rows);
     } catch (err) {
         console.error('Ошибка при получении комментариев:', err);
@@ -78,11 +83,25 @@ router.get('/:articleId', async (req, res) => {
 
 // Добавить комментарий
 router.post('/', upload.array('files', 5), [
-    body('articleId').notEmpty().isUUID(),
+    body('articleId').notEmpty().isUUID().custom(async (value) => {
+        const [rows] = await pool.query('SELECT id FROM articles WHERE id = ?', [value]);
+        if (rows.length === 0) {
+            throw new Error('Статья не найдена');
+        }
+        return true;
+    }),
     body('userId').notEmpty().isUUID(),
     body('userName').notEmpty().isString(),
     body('text').notEmpty().isString(),
-    body('parentId').optional().isUUID(),
+    body('parentId').optional().isUUID().custom(async (value, { req }) => {
+        if (value) {
+            const [rows] = await pool.query('SELECT id FROM comments WHERE id = ? AND articleId = ?', [value, req.body.articleId]);
+            if (rows.length === 0) {
+                throw new Error('Родительский комментарий не найден или не относится к этой статье');
+            }
+        }
+        return true;
+    }),
 ], async (req, res) => {
     console.log('POST /api/comments received:', req.body, 'Files:', req.files);
     const errors = validationResult(req);
@@ -119,7 +138,7 @@ router.post('/', upload.array('files', 5), [
         });
     } catch (err) {
         console.error('Ошибка при добавлении комментария:', err);
-        res.status(500).json({ message: 'Ошибка сервера при добавлении комментария', error: err.message });
+        res.status(400).json({ message: 'Ошибка при добавлении комментария', error: err.message });
     }
 });
 
