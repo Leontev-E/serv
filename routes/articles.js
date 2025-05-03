@@ -34,14 +34,27 @@ const validateCreateArticle = [
         .withMessage('Неверный формат ID категории')
         .custom(async (value) => {
             if (value) {
-                const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
-                if (rows.length === 0) {
-                    throw new Error('Категория не найдена');
+                try {
+                    const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
+                    console.log('Category check:', { categoryId: value, found: rows.length > 0 });
+                    if (rows.length === 0) {
+                        throw new Error('Категория не найдена');
+                    }
+                } catch (err) {
+                    console.error('Error querying categories:', err);
+                    throw new Error('Ошибка проверки категории');
                 }
             }
             return true;
         }),
-    body('image').optional().isURL().withMessage('Неверный формат URL изображения'),
+    body('image')
+        .optional({ nullable: true })
+        .custom((value) => {
+            if (value === null || value === undefined) return true;
+            if (typeof value !== 'string') return false;
+            return /^(https?:\/\/[^\s$.?#].[^\s]*)$/.test(value);
+        })
+        .withMessage('Неверный формат URL изображения'),
 ];
 
 // Валидация для PUT /articles/:id
@@ -61,14 +74,27 @@ const validateUpdateArticle = [
         .withMessage('Неверный формат ID категории')
         .custom(async (value) => {
             if (value) {
-                const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
-                if (rows.length === 0) {
-                    throw new Error('Категория не найдена');
+                try {
+                    const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
+                    console.log('Category check:', { categoryId: value, found: rows.length > 0 });
+                    if (rows.length === 0) {
+                        throw new Error('Категория не найдена');
+                    }
+                } catch (err) {
+                    console.error('Error querying categories:', err);
+                    throw new Error('Ошибка проверки категории');
                 }
             }
             return true;
         }),
-    body('image').optional().isURL().withMessage('Неверный формат URL изображения'),
+    body('image')
+        .optional({ nullable: true })
+        .custom((value) => {
+            if (value === null || value === undefined) return true;
+            if (typeof value !== 'string') return false;
+            return /^(https?:\/\/[^\s$.?#].[^\s]*)$/.test(value);
+        })
+        .withMessage('Неверный формат URL изображения'),
 ];
 
 // Валидация для DELETE /articles/:id
@@ -80,6 +106,7 @@ const validateDeleteArticle = [
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+        console.log('Validation errors:', errors.array());
         return res.status(400).json({ message: 'Ошибка валидации', errors: errors.array() });
     }
     next();
@@ -93,22 +120,23 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
         const cacheKey = `articles:${page}:${limit}:${q}`;
         const cached = await redisClient.get(cacheKey);
         if (cached) {
+            console.log('Serving from cache:', cacheKey);
             return res.json(JSON.parse(cached));
         }
 
         const searchQuery = q ? `%${q}%` : '%';
         const [rows] = await pool.query(
             `SELECT id, title, content, categoryId, author, createdAt, image
-       FROM articles
-       WHERE title LIKE ? OR content LIKE ?
-       ORDER BY createdAt DESC
-       LIMIT ? OFFSET ?`,
+             FROM articles
+             WHERE title LIKE ? OR content LIKE ?
+             ORDER BY createdAt DESC
+             LIMIT ? OFFSET ?`,
             [searchQuery, searchQuery, parseInt(limit), parseInt(offset)]
         );
 
         const [total] = await pool.query(
             `SELECT COUNT(*) as count FROM articles
-       WHERE title LIKE ? OR content LIKE ?`,
+             WHERE title LIKE ? OR content LIKE ?`,
             [searchQuery, searchQuery]
         );
 
@@ -128,6 +156,7 @@ router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, r
         const cacheKey = `article:${req.params.id}`;
         const cached = await redisClient.get(cacheKey);
         if (cached) {
+            console.log('Serving from cache:', cacheKey);
             return res.json(JSON.parse(cached));
         }
 
@@ -155,6 +184,8 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
         categoryId = categoryId || null;
         image = image || null;
 
+        console.log('Creating article:', { id, title, categoryId, author, createdAt, image });
+
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
@@ -179,6 +210,8 @@ router.put('/:id', validateUpdateArticle, handleValidationErrors, async (req, re
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Статья не найдена' });
         }
+
+        console.log('Updating article:', { id: req.params.id, title, categoryId, author, createdAt, image });
 
         await pool.query(
             'UPDATE articles SET title = ?, content = ?, categoryId = ?, author = ?, createdAt = ?, image = ? WHERE id = ?',
