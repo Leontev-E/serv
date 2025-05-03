@@ -126,10 +126,11 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
 
         const searchQuery = q ? `%${q}%` : '%';
         const [rows] = await pool.query(
-            `SELECT id, title, content, categoryId, author, createdAt, image
-             FROM articles
-             WHERE title LIKE ? OR content LIKE ?
-             ORDER BY createdAt DESC
+            `SELECT a.id, a.title, a.content, a.categoryId, a.author, a.createdAt, a.image, c.name as categoryName
+             FROM articles a
+             LEFT JOIN categories c ON a.categoryId = c.id
+             WHERE a.title LIKE ? OR a.content LIKE ?
+             ORDER BY a.createdAt DESC
              LIMIT ? OFFSET ?`,
             [searchQuery, searchQuery, parseInt(limit), parseInt(offset)]
         );
@@ -153,24 +154,35 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
 // Получить статью по ID
 router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, res) => {
     try {
-        const cacheKey = `article:${req.params.id}`;
+        const articleId = req.params.id;
+        const cacheKey = `article:${articleId}`;
         const cached = await redisClient.get(cacheKey);
         if (cached) {
             console.log('Serving from cache:', cacheKey);
             return res.json(JSON.parse(cached));
         }
 
-        const [rows] = await pool.query('SELECT * FROM articles WHERE id = ?', [req.params.id]);
+        console.log('Fetching article from DB:', articleId);
+        const [rows] = await pool.query(
+            `SELECT a.*, c.name as categoryName
+             FROM articles a
+             LEFT JOIN categories c ON a.categoryId = c.id
+             WHERE a.id = ?`,
+            [articleId]
+        );
+
         if (rows.length === 0) {
+            console.log('Article not found:', articleId);
             return res.status(404).json({ message: 'Статья не найдена' });
         }
 
-        await redisClient.setEx(cacheKey, 300, JSON.stringify(rows[0]));
+        const article = rows[0];
+        await redisClient.setEx(cacheKey, 300, JSON.stringify(article));
         res.set('Cache-Control', 'public, max-age=300');
-        res.json(rows[0]);
+        res.json(article);
     } catch (err) {
         console.error('Ошибка при получении статьи:', err);
-        res.status(500).json({ message: 'Ошибка сервера при получении статьи' });
+        res.status(500).json({ message: 'Ошибка сервера при получении статьи', error: err.message });
     }
 });
 
