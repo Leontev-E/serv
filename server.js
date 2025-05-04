@@ -8,7 +8,10 @@ import usersRoutes from './routes/users.js';
 import categoriesRoutes from './routes/categories.js';
 import commentsRoutes from './routes/comments.js';
 import servicesRoutes from './routes/services.js';
+import clicksRoutes from './routes/clicks.js';
 import rateLimit from 'express-rate-limit';
+import schedule from 'node-schedule';
+import pool from './db.js';
 
 dotenv.config();
 
@@ -52,6 +55,21 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
+// Ежедневная очистка кликов за вчерашний день в 00:00 MSK
+const job = schedule.scheduleJob('0 0 * * *', async () => {
+    try {
+        // Вчерашняя дата в MSK (UTC+3)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        const [result] = await pool.query('DELETE FROM clicks WHERE date = ?', [yesterdayStr]);
+        logger.info(`[Scheduler] Удалено ${result.affectedRows} кликов за ${yesterdayStr}`);
+    } catch (err) {
+        logger.error('[Scheduler] Ошибка при очистке кликов:', err);
+    }
+});
+
 // Проверка сервера
 app.get('/healthz', (req, res) => {
     res.status(200).send('OK');
@@ -63,6 +81,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/services', servicesRoutes);
+app.use('/api/clicks', clicksRoutes);
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
