@@ -9,6 +9,7 @@ import categoriesRoutes from './routes/categories.js';
 import commentsRoutes from './routes/comments.js';
 import servicesRoutes from './routes/services.js';
 import clicksRoutes from './routes/clicks.js';
+import approvalsRoutes from './routes/approvals.js';
 import rateLimit from 'express-rate-limit';
 import schedule from 'node-schedule';
 import pool from './db.js';
@@ -56,7 +57,7 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Ежедневная очистка кликов за вчерашний день в 00:00 MSK
-const job = schedule.scheduleJob('0 0 * * *', async () => {
+const clickCleanupJob = schedule.scheduleJob('0 0 * * *', async () => {
     try {
         // Вчерашняя дата в MSK (UTC+3)
         const yesterday = new Date();
@@ -67,6 +68,27 @@ const job = schedule.scheduleJob('0 0 * * *', async () => {
         logger.info(`[Scheduler] Удалено ${result.affectedRows} кликов за ${yesterdayStr}`);
     } catch (err) {
         logger.error('[Scheduler] Ошибка при очистке кликов:', err);
+    }
+});
+
+// Ежемесячная очистка апрувов за предыдущий месяц в 00:00 1-го числа (MSK)
+const approvalCleanupJob = schedule.scheduleJob('0 0 1 * *', async () => {
+    try {
+        // Вычисление первого и последнего дня предыдущего месяца
+        const now = new Date();
+        const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+        const startDate = firstDayLastMonth.toISOString().split('T')[0]; // YYYY-MM-DD
+        const endDate = lastDayLastMonth.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        const [result] = await pool.query(
+            'DELETE FROM approvals WHERE created_at >= ? AND created_at <= ?',
+            [`${startDate} 00:00:00`, `${endDate} 23:59:59`]
+        );
+        logger.info(`[Scheduler] Удалено ${result.affectedRows} апрувов за период ${startDate} - ${endDate}`);
+    } catch (err) {
+        logger.error('[Scheduler] Ошибка при очистке апрувов:', err);
     }
 });
 
@@ -82,6 +104,7 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/clicks', clicksRoutes);
+app.use('/api/approvals', approvalsRoutes);
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
