@@ -38,7 +38,7 @@ router.get(
                 pxl: row.pxl || '{{pixel.id}}',
                 click_count: row.click_count,
                 date: row.date,
-                notification_status: row.notification_status,
+                notification_status: row.notification_status || 'none',
             }));
 
             res.set('Cache-Control', 'no-store');

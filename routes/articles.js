@@ -2,7 +2,6 @@ import express from 'express';
 import pool from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { body, param, query, validationResult } from 'express-validator';
-import redisClient from '../redis.js';
 
 const router = express.Router();
 
@@ -34,15 +33,9 @@ const validateCreateArticle = [
         .withMessage('Неверный формат ID категории')
         .custom(async (value) => {
             if (value) {
-                try {
-                    const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
-                    console.log('Category check:', { categoryId: value, found: rows.length > 0 });
-                    if (rows.length === 0) {
-                        throw new Error('Категория не найдена');
-                    }
-                } catch (err) {
-                    console.error('Error querying categories:', err);
-                    throw new Error('Ошибка проверки категории');
+                const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
+                if (rows.length === 0) {
+                    throw new Error('Категория не найдена');
                 }
             }
             return true;
@@ -52,7 +45,8 @@ const validateCreateArticle = [
         .custom((value) => {
             if (value === null || value === undefined) return true;
             if (typeof value !== 'string') return false;
-            return /^(https?:\/\/[^\s$.?#].[^\s]*)$/.test(value);
+            return /^(https?:\/\/[^
+\s$.?#].[^\s] *) $ /.test(value);
         })
         .withMessage('Неверный формат URL изображения'),
 ];
@@ -74,15 +68,9 @@ const validateUpdateArticle = [
         .withMessage('Неверный формат ID категории')
         .custom(async (value) => {
             if (value) {
-                try {
-                    const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
-                    console.log('Category check:', { categoryId: value, found: rows.length > 0 });
-                    if (rows.length === 0) {
-                        throw new Error('Категория не найдена');
-                    }
-                } catch (err) {
-                    console.error('Error querying categories:', err);
-                    throw new Error('Ошибка проверки категории');
+                const [rows] = await pool.query('SELECT id FROM categories WHERE id = ?', [value]);
+                if (rows.length === 0) {
+                    throw new Error('Категория не найдена');
                 }
             }
             return true;
@@ -92,7 +80,8 @@ const validateUpdateArticle = [
         .custom((value) => {
             if (value === null || value === undefined) return true;
             if (typeof value !== 'string') return false;
-            return /^(https?:\/\/[^\s$.?#].[^\s]*)$/.test(value);
+            return /^(https?:\/\/[^
+\s$.?#].[^\s] *) $ /.test(value);
         })
         .withMessage('Неверный формат URL изображения'),
 ];
@@ -106,34 +95,9 @@ const validateDeleteArticle = [
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        console.log('Validation errors:', errors.array());
         return res.status(400).json({ message: 'Ошибка валидации', errors: errors.array() });
     }
     next();
-};
-
-// Функция для очистки кэша
-const clearArticlesCache = async () => {
-    try {
-        const keys = [];
-        const pattern = 'articles:*';
-        let cursor = '0';
-        do {
-            const [newCursor, foundKeys] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-            cursor = newCursor;
-            keys.push(...foundKeys);
-        } while (cursor !== '0');
-
-        if (keys.length > 0) {
-            await redisClient.del(keys);
-            console.log('Cache cleared:', keys);
-        } else {
-            console.log('No cache keys found for pattern:', pattern);
-        }
-    } catch (err) {
-        console.error('Error clearing cache:', err.message);
-        // Не прерываем выполнение, чтобы изменение в БД прошло
-    }
 };
 
 // Получить все статьи с пагинацией и поиском
@@ -141,13 +105,6 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
     try {
         const { page = 1, limit = 10, q = '' } = req.query;
         const offset = (page - 1) * limit;
-        const cacheKey = `articles:${page}:${limit}:${q}`;
-        const cached = await redisClient.get(cacheKey);
-        if (cached) {
-            console.log('Serving from cache:', cacheKey);
-            return res.json(JSON.parse(cached));
-        }
-
         const searchQuery = q ? `%${q}%` : '%';
         const [rows] = await pool.query(
             `SELECT a.id, a.title, a.content, a.categoryId, a.author, a.createdAt, a.image, c.name as categoryName
@@ -166,9 +123,6 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
         );
 
         const response = { articles: rows, total: total[0].count };
-        await redisClient.setEx(cacheKey, 300, JSON.stringify(response));
-        console.log('Cached response:', cacheKey);
-        res.set('Cache-Control', 'public, max-age=300');
         res.json(response);
     } catch (err) {
         console.error('Ошибка при получении статей:', err.message);
@@ -180,14 +134,6 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
 router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, res) => {
     try {
         const articleId = req.params.id;
-        const cacheKey = `article:${articleId}`;
-        const cached = await redisClient.get(cacheKey);
-        if (cached) {
-            console.log('Serving from cache:', cacheKey);
-            return res.json(JSON.parse(cached));
-        }
-
-        console.log('Fetching article from DB:', articleId);
         const [rows] = await pool.query(
             `SELECT a.*, c.name as categoryName
              FROM articles a
@@ -197,15 +143,10 @@ router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, r
         );
 
         if (rows.length === 0) {
-            console.log('Article not found:', articleId);
             return res.status(404).json({ message: 'Статья не найдена' });
         }
 
-        const article = rows[0];
-        await redisClient.setEx(cacheKey, 300, JSON.stringify(article));
-        console.log('Cached article:', cacheKey);
-        res.set('Cache-Control', 'public, max-age=300');
-        res.json(article);
+        res.json(rows[0]);
     } catch (err) {
         console.error('Ошибка при получении статьи:', err.message);
         res.status(500).json({ message: 'Ошибка сервера при получении статьи', error: err.message });
@@ -222,15 +163,10 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
         categoryId = categoryId || null;
         image = image || null;
 
-        console.log('Creating article:', { id, title, categoryId, author, createdAt, image });
-
         await pool.query(
             'INSERT INTO articles (id, title, content, categoryId, author, createdAt, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, title, content, categoryId, author, createdAt, image]
         );
-
-        // Очистка кэша
-        await clearArticlesCache();
 
         res.status(201).json({ id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
@@ -249,17 +185,10 @@ router.put('/:id', validateUpdateArticle, handleValidationErrors, async (req, re
             return res.status(404).json({ message: 'Статья не найдена' });
         }
 
-        console.log('Updating article:', { id: req.params.id, title, categoryId, author, createdAt, image });
-
         await pool.query(
             'UPDATE articles SET title = ?, content = ?, categoryId = ?, author = ?, createdAt = ?, image = ? WHERE id = ?',
             [title, content, categoryId || null, author, createdAt || new Date().toISOString(), image || null, req.params.id]
         );
-
-        // Очистка кэша
-        await clearArticlesCache();
-        await redisClient.del(`article:${req.params.id}`);
-        console.log('Cleared article cache:', `article:${req.params.id}`);
 
         res.json({ id: req.params.id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
@@ -277,11 +206,6 @@ router.delete('/:id', validateDeleteArticle, handleValidationErrors, async (req,
         }
 
         await pool.query('DELETE FROM articles WHERE id = ?', [req.params.id]);
-
-        // Очистка кэша
-        await clearArticlesCache();
-        await redisClient.del(`article:${req.params.id}`);
-        console.log('Cleared article cache:', `article:${req.params.id}`);
 
         res.json({ message: 'Статья успешно удалена' });
     } catch (err) {
