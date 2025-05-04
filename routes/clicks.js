@@ -1,14 +1,12 @@
 import express from 'express';
 import pool from '../db.js';
 import { query } from 'express-validator';
-import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Получить все клики
 router.get(
     '/',
-    authenticateToken,
     [
         query('page').optional().isInt({ min: 1 }).toInt(),
         query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
@@ -43,7 +41,7 @@ router.get(
                 notification_status: row.notification_status,
             }));
 
-            res.set('Cache-Control', 'no-store'); // Отключение кэширования
+            res.set('Cache-Control', 'no-store');
             res.set('X-Total-Pages', totalPages);
             res.json(response);
         } catch (err) {
@@ -54,7 +52,7 @@ router.get(
 );
 
 // Удалить клики за вчерашний день (MSK)
-router.delete('/yesterday', authenticateToken, async (req, res) => {
+router.delete('/yesterday', async (req, res) => {
     try {
         // Вчерашняя дата в MSK (UTC+3)
         const yesterday = new Date();
