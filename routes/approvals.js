@@ -10,13 +10,15 @@ router.get(
     [
         query('page').optional().isInt({ min: 1 }).toInt(),
         query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-        query('start_date').optional().isISO8601().toDate(),
-        query('end_date').optional().isISO8601().toDate(),
+        query('start_date').optional().matches(/^\d{4}-\d{2}-\d{2}$/),
+        query('end_date').optional().matches(/^\d{4}-\d{2}-\d{2}$/),
     ],
     async (req, res) => {
         try {
             const { page = 1, limit = 50, start_date, end_date } = req.query;
             const offset = (page - 1) * limit;
+
+            console.log('Received query params:', { page, limit, start_date, end_date });
 
             // Формирование условий для фильтрации по датам
             let dateFilter = '';
@@ -25,6 +27,11 @@ router.get(
                 dateFilter = 'WHERE created_at >= ? AND created_at <= ?';
                 queryParams.unshift(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
             }
+
+            console.log('SQL query:', {
+                query: `SELECT id, campaign_name, adset_name, ad_name, offer_id, country, revenue, sub_id, created_at FROM approvals ${dateFilter} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+                params: queryParams,
+            });
 
             // Запрос общего количества
             const [countRows] = await pool.query(
@@ -58,6 +65,8 @@ router.get(
                 created_at: row.created_at.toISOString(),
             }));
 
+            console.log('Response data:', response);
+
             res.set('Cache-Control', 'no-store');
             res.set('X-Total-Pages', totalPages);
             res.json(response);
@@ -71,13 +80,12 @@ router.get(
 // Удалить апрувы за предыдущий месяц
 router.delete('/previous-month', async (req, res) => {
     try {
-        // Вычисление первого и последнего дня предыдущего месяца
         const now = new Date();
         const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-        const startDate = firstDayLastMonth.toISOString().split('T')[0]; // YYYY-MM-DD
-        const endDate = lastDayLastMonth.toISOString().split('T')[0]; // YYYY-MM-DD
+        const startDate = firstDayLastMonth.toISOString().split('T')[0];
+        const endDate = lastDayLastMonth.toISOString().split('T')[0];
 
         const [result] = await pool.query(
             'DELETE FROM approvals WHERE created_at >= ? AND created_at <= ?',
