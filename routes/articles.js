@@ -112,6 +112,30 @@ const handleValidationErrors = (req, res, next) => {
     next();
 };
 
+// Функция для очистки кэша
+const clearArticlesCache = async () => {
+    try {
+        const keys = [];
+        const pattern = 'articles:*';
+        let cursor = '0';
+        do {
+            const [newCursor, foundKeys] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+            cursor = newCursor;
+            keys.push(...foundKeys);
+        } while (cursor !== '0');
+
+        if (keys.length > 0) {
+            await redisClient.del(keys);
+            console.log('Cache cleared:', keys);
+        } else {
+            console.log('No cache keys found for pattern:', pattern);
+        }
+    } catch (err) {
+        console.error('Error clearing cache:', err.message);
+        // Не прерываем выполнение, чтобы изменение в БД прошло
+    }
+};
+
 // Получить все статьи с пагинацией и поиском
 router.get('/', validateGetArticles, handleValidationErrors, async (req, res) => {
     try {
@@ -143,11 +167,12 @@ router.get('/', validateGetArticles, handleValidationErrors, async (req, res) =>
 
         const response = { articles: rows, total: total[0].count };
         await redisClient.setEx(cacheKey, 300, JSON.stringify(response));
+        console.log('Cached response:', cacheKey);
         res.set('Cache-Control', 'public, max-age=300');
         res.json(response);
     } catch (err) {
-        console.error('Ошибка при получении статей:', err);
-        res.status(500).json({ message: 'Ошибка сервера при получении статей' });
+        console.error('Ошибка при получении статей:', err.message);
+        res.status(500).json({ message: 'Ошибка сервера при получении статей', error: err.message });
     }
 });
 
@@ -178,10 +203,11 @@ router.get('/:id', validateGetArticleById, handleValidationErrors, async (req, r
 
         const article = rows[0];
         await redisClient.setEx(cacheKey, 300, JSON.stringify(article));
+        console.log('Cached article:', cacheKey);
         res.set('Cache-Control', 'public, max-age=300');
         res.json(article);
     } catch (err) {
-        console.error('Ошибка при получении статьи:', err);
+        console.error('Ошибка при получении статьи:', err.message);
         res.status(500).json({ message: 'Ошибка сервера при получении статьи', error: err.message });
     }
 });
@@ -203,12 +229,12 @@ router.post('/', validateCreateArticle, handleValidationErrors, async (req, res)
             [id, title, content, categoryId, author, createdAt, image]
         );
 
-        // Инвалидировать кэш
-        await redisClient.del('articles:*');
+        // Очистка кэша
+        await clearArticlesCache();
 
         res.status(201).json({ id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
-        console.error('Ошибка при создании статьи:', err);
+        console.error('Ошибка при создании статьи:', err.message);
         res.status(500).json({ message: 'Ошибка сервера при создании статьи', error: err.message });
     }
 });
@@ -230,13 +256,14 @@ router.put('/:id', validateUpdateArticle, handleValidationErrors, async (req, re
             [title, content, categoryId || null, author, createdAt || new Date().toISOString(), image || null, req.params.id]
         );
 
-        // Инвалидировать кэш
-        await redisClient.del('articles:*');
+        // Очистка кэша
+        await clearArticlesCache();
         await redisClient.del(`article:${req.params.id}`);
+        console.log('Cleared article cache:', `article:${req.params.id}`);
 
         res.json({ id: req.params.id, title, content, categoryId, author, createdAt, image });
     } catch (err) {
-        console.error('Ошибка при обновлении статьи:', err);
+        console.error('Ошибка при обновлении статьи:', err.message);
         res.status(500).json({ message: 'Ошибка сервера при обновлении статьи', error: err.message });
     }
 });
@@ -251,13 +278,14 @@ router.delete('/:id', validateDeleteArticle, handleValidationErrors, async (req,
 
         await pool.query('DELETE FROM articles WHERE id = ?', [req.params.id]);
 
-        // Инвалидировать кэш
-        await redisClient.del('articles:*');
+        // Очистка кэша
+        await clearArticlesCache();
         await redisClient.del(`article:${req.params.id}`);
+        console.log('Cleared article cache:', `article:${req.params.id}`);
 
         res.json({ message: 'Статья успешно удалена' });
     } catch (err) {
-        console.error('Ошибка при удалении статьи:', err);
+        console.error('Ошибка при удалении статьи:', err.message);
         res.status(500).json({ message: 'Ошибка сервера при удалении статьи', error: err.message });
     }
 });
